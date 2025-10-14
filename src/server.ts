@@ -62,19 +62,17 @@ export const createServer = (configuration: ServerConfiguration): Server => {
       incomingMessage,
       `http://${process.env['HOST'] ?? 'localhost'}`,
     )
-    handleRequest(request).then((response) =>
+    handleRequest(request).then(response =>
       writeWebResponseToServerResponse(response, serverResponse),
     )
   })
 
   return {
-    listen: (port) =>
-      new Promise((resolve) =>
-        server.listen({ port }, () => resolve(undefined)),
-      ),
+    listen: port =>
+      new Promise(resolve => server.listen({ port }, () => resolve(undefined))),
     close: () =>
       new Promise((resolve, reject) =>
-        server.close((err) =>
+        server.close(err =>
           err === undefined ? resolve(undefined) : reject(err),
         ),
       ),
@@ -144,7 +142,7 @@ const createRequestHandler =
         let staticFile
         try {
           staticFile = await nodeFS.open(path)
-          await staticFile.stat().then((stats) => {
+          await staticFile.stat().then(stats => {
             if (stats.isFile() === false) {
               throw new Error(`'${path}' is not a file`)
             }
@@ -202,7 +200,7 @@ const handleError = (
     errorPageModulePath,
     originalRequest,
     responseDetails,
-  ).catch((_error) => {
+  ).catch(_error => {
     // Fall back to a `text/plain` error if the error handler itself failed
     // (or does not exist).
     const errorMessage = ((): string => {
@@ -234,7 +232,7 @@ const incomingMessageToWebRequest = (
     const value = incomingMessage.headers[key]
     if (value !== undefined) {
       if (Array.isArray(value)) {
-        value.forEach((element) => headers.append(key, element))
+        value.forEach(element => headers.append(key, element))
       } else {
         headers.append(key, value)
       }
@@ -268,6 +266,6 @@ const writeWebResponseToServerResponse = async (
       ?.pipeTo(Writable.toWeb(serverResponse))
       .catch(console.error)
   } finally {
-    await new Promise((resolve) => serverResponse.end(resolve))
+    await new Promise(resolve => serverResponse.end(resolve))
   }
 }
