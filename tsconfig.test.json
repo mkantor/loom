@@ -3,6 +3,6 @@
   "compilerOptions": {
     "outDir": "./dist-test"
   },
-  "include": ["./src/**/*.test.ts", "./src/**/*.test.tsx"],
+  "include": ["./src/**/*.test.ts"],
   "references": [{ "path": "./tsconfig.main.json" }]
 }
