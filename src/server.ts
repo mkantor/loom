@@ -18,7 +18,7 @@ export type ServerConfiguration = {
    * a page is not found at this path, minimal `text/plain` responses will be
    * sent upon errors.
    *
-   * Defaults to `{error}.js`.
+   * Defaults to `'{error}.js'`.
    */
   readonly errorPage?: string
 
