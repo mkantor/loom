@@ -9,6 +9,9 @@
     "@types/node": "^24.6.2",
     "typescript": "^5.9.3"
   },
+  "files": [
+    "dist/*"
+  ],
   "main": "dist/index.js",
   "repository": "github:mkantor/loom-node",
   "scripts": {
