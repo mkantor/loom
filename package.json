@@ -1,6 +1,6 @@
 {
   "name": "@superhighway/loom",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "dependencies": {
     "@matt.kantor/silk": "latest",
     "mime": "^4.1.0"
