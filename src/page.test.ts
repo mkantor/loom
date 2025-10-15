@@ -1,5 +1,4 @@
-import { createElement } from '@matt.kantor/silk/dist/createElement.js'
-import type { HTMLToken } from '@matt.kantor/silk/dist/htmlToken.js'
+import { createElement, type HTMLToken } from '@superhighway/silk'
 import assert from 'node:assert'
 import test, { suite } from 'node:test'
 import { isPageModule, page } from './page.js'
