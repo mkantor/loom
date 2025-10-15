@@ -1,4 +1,4 @@
-import type { ReadableHTMLTokenStream } from '@matt.kantor/silk'
+import type { ReadableHTMLTokenStream } from '@superhighway/silk'
 import type { ResponseStatus } from './server.js'
 
 export type Page = { readonly [isPage]: true } & PageFunction

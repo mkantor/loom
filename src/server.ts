@@ -1,4 +1,4 @@
-import { HTMLSerializingTransformStream } from '@matt.kantor/silk'
+import { HTMLSerializingTransformStream } from '@superhighway/silk'
 import mime from 'mime/lite'
 import nodeFS from 'node:fs/promises'
 import * as nodeHTTP from 'node:http'
