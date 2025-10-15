@@ -12,6 +12,7 @@
   "files": [
     "dist/*"
   ],
+  "license": "MIT",
   "main": "dist/index.js",
   "repository": "github:mkantor/loom-node",
   "scripts": {
