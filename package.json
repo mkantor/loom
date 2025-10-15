@@ -1,5 +1,5 @@
 {
-  "name": "@matt.kantor/loom",
+  "name": "@superhighway/loom",
   "version": "0.0.1",
   "dependencies": {
     "@matt.kantor/silk": "latest",
