@@ -1,6 +1,6 @@
 {
   "name": "@superhighway/loom",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "dependencies": {
     "@superhighway/silk": "^0.2.0",
     "mime": "^4.1.0"
