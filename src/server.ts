@@ -147,11 +147,15 @@ const createRequestHandler =
               throw new Error(`'${path}' is not a file`)
             }
           })
+          const oneYearInSeconds = '31536000'
           return new Response(
             staticFile.readableWebStream({ autoClose: true }),
             {
               status: 200,
-              headers: mimeType ? { 'content-type': mimeType } : {},
+              headers: {
+                'cache-control': `max-age=${oneYearInSeconds}`,
+                ...(mimeType ? { 'content-type': mimeType } : {}),
+              },
             },
           )
         } catch (error) {
