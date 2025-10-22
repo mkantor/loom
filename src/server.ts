@@ -102,6 +102,10 @@ const createRequestHandler =
 
     const errorPageModulePath = `${publicDirectory}/${errorPage}`
 
+    if (request.method !== 'GET') {
+      return handleError(errorPageModulePath, request, { status: 501 })
+    }
+
     // First try looking for a page to serve the request.
     const pageModulePath = `${publicDirectory}/${requestPath}${pageFilenameSuffix}`
     return handlePageRequestOrReject(pageModulePath, request, {
