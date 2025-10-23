@@ -1,10 +1,9 @@
-import { HTMLSerializingTransformStream } from '@superhighway/silk'
 import mime from 'mime/lite'
 import nodeFS from 'node:fs/promises'
 import * as nodeHTTP from 'node:http'
 import nodePath from 'node:path'
 import { Readable, Writable } from 'node:stream'
-import { isPageModule } from './page.js'
+import { isRequestHandlerModule } from './handler.js'
 
 export type ServerConfiguration = {
   /**
@@ -14,23 +13,23 @@ export type ServerConfiguration = {
   readonly publicDirectory: string
 
   /**
-   * A path relative to `publicDirectory` where an error page may be found. If
-   * a page is not found at this path, minimal `text/plain` responses will be
-   * sent upon errors.
+   * A path relative to `publicDirectory` where an error handler may be found.
+   * If a request handler module is not found at this path, minimal `text/plain`
+   * responses will be sent upon errors.
    *
    * Defaults to `'{error}.js'`.
    */
-  readonly errorPage?: string
+  readonly errorHandler?: string
 
   /**
    * Defaults to `'{page}.js'`.
    */
-  readonly pageFilenameSuffix?: string
+  readonly handlerFilenameSuffix?: string
 }
 const serverConfigurationDefaults = {
-  pageFilenameSuffix: '{page}.js',
-  errorPage: '{error}.js',
-}
+  errorHandler: '{error}.js',
+  handlerFilenameSuffix: '{page}.js',
+} satisfies Partial<ServerConfiguration>
 
 export type Server = {
   /**
@@ -95,47 +94,49 @@ const createRequestHandler =
       '',
     )
 
-    const { publicDirectory, pageFilenameSuffix, errorPage } = {
+    const { publicDirectory, handlerFilenameSuffix, errorHandler } = {
       ...serverConfigurationDefaults,
       ...configuration,
     }
 
-    const errorPageModulePath = `${publicDirectory}/${errorPage}`
+    const errorModulePath = `${publicDirectory}/${errorHandler}`
 
     if (request.method !== 'GET') {
-      return handleError(errorPageModulePath, request, { status: 501 })
+      return handleError(errorModulePath, request, { status: 501 })
     }
 
-    // First try looking for a page to serve the request.
-    const pageModulePath = `${publicDirectory}/${requestPath}${pageFilenameSuffix}`
-    return handlePageRequestOrReject(pageModulePath, request, {
+    // First try looking for a handler to serve the request.
+    const handlerModulePath = `${publicDirectory}/${requestPath}${encodeURIComponent(
+      handlerFilenameSuffix,
+    )}`
+    return handleRequestDynamicallyOrReject(handlerModulePath, request, {
       status: 200,
-    }).catch(async (pageError: unknown) => {
+    }).catch(async (handlerError: unknown) => {
       // Fall back to looking for a static file.
 
       if (
         // Don't log `ERR_MODULE_NOT_FOUND` errors (they're expected if the
-        // request is for a static file rather than a page).
-        typeof pageError !== 'object' ||
-        pageError === null ||
-        !('code' in pageError) ||
-        pageError.code !== 'ERR_MODULE_NOT_FOUND'
+        // request is for a static file rather than a dynamic handler).
+        typeof handlerError !== 'object' ||
+        handlerError === null ||
+        !('code' in handlerError) ||
+        handlerError.code !== 'ERR_MODULE_NOT_FOUND'
       ) {
-        console.error(pageError)
+        console.error(handlerError)
         console.warn('Falling back to a static file (if one exists)')
       }
 
-      // Make it impossible to get the source of a page this way (something else
-      // would have had to already gone wrong to make it here; this is defense
-      // in depth).
-      if (requestPath.endsWith(pageFilenameSuffix)) {
+      // Make it impossible to get the source of a handler this way (something
+      // else would have had to already gone wrong to make it here; this is
+      // defense in depth).
+      if (requestPath.endsWith(handlerFilenameSuffix)) {
         console.error(
-          `Request path '/${requestPath}' ends in '${pageFilenameSuffix}'`,
+          `Request path '/${requestPath}' ends in '${handlerFilenameSuffix}'`,
         )
-        return handleError(errorPageModulePath, request, { status: 404 })
-      } else if (requestPath === errorPage) {
-        console.error(`Request path '/${requestPath}' was for error page`)
-        return handleError(errorPageModulePath, request, { status: 404 })
+        return handleError(errorModulePath, request, { status: 404 })
+      } else if (requestPath === errorHandler) {
+        console.error(`Request path '/${requestPath}' was for error handler`)
+        return handleError(errorModulePath, request, { status: 404 })
       } else {
         // Try to serve as a static file.
         let path = `${publicDirectory}/${requestPath}`
@@ -174,45 +175,32 @@ const createRequestHandler =
           if (staticFile !== undefined) {
             staticFile.close()
           }
-          return handleError(errorPageModulePath, request, { status: 404 })
+          return handleError(errorModulePath, request, { status: 404 })
         }
       }
     })
   }
 
-const handlePageRequestOrReject = (
-  pageModulePath: string,
+const handleRequestDynamicallyOrReject = (
+  modulePath: string,
   request: Request,
   responseDetails: { readonly status: ResponseStatus },
 ) =>
-  import(pageModulePath).then((module: unknown) => {
-    if (!isPageModule(module)) {
-      throw new Error(`'${pageModulePath}' is not a valid page module`)
+  import(modulePath).then(async (module: unknown) => {
+    if (!isRequestHandlerModule(module)) {
+      throw new Error(`'${modulePath}' is not a valid request handler module`)
     } else {
-      const page = module.default(request, responseDetails)
-      return new Response(
-        page
-          .pipeThrough(
-            new HTMLSerializingTransformStream({
-              includeDoctype: true,
-            }),
-          )
-          .pipeThrough(new TextEncoderStream()),
-        {
-          status: responseDetails.status,
-          headers: { 'content-type': 'text/html; charset=utf-8' },
-        },
-      )
+      return module.default(request, responseDetails)
     }
   })
 
 const handleError = (
-  errorPageModulePath: string,
+  errorModulePath: string,
   originalRequest: Request,
   responseDetails: { readonly status: Exclude<ResponseStatus, 200> },
 ) =>
-  handlePageRequestOrReject(
-    errorPageModulePath,
+  handleRequestDynamicallyOrReject(
+    errorModulePath,
     originalRequest,
     responseDetails,
   ).catch(_error => {

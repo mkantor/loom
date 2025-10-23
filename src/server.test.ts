@@ -20,33 +20,34 @@ const isPortTaken = (port: number) =>
       .listen(port)
   })
 
-let availablePort: number | undefined = undefined
-let remainingAttempts = 10 // Try up to this many ports before giving up.
-while (remainingAttempts > 0) {
-  remainingAttempts = remainingAttempts - 1
-  const arbitraryPort = getArbitraryPort()
-  const portIsTaken = await isPortTaken(arbitraryPort)
-  if (!portIsTaken) {
-    availablePort = arbitraryPort
-    break
+const getAvailablePort = async () => {
+  let remainingAttempts = 10 // Try up to this many ports before giving up.
+  while (remainingAttempts > 0) {
+    remainingAttempts = remainingAttempts - 1
+    const arbitraryPort = getArbitraryPort()
+    const portIsTaken = await isPortTaken(arbitraryPort)
+    if (!portIsTaken) {
+      return arbitraryPort
+      break
+    }
   }
-}
-if (availablePort === undefined) {
   throw new Error('Could not find an available port')
 }
 
 suite('server', _ => {
   test('lifecycle', async _ => {
+    const availablePort = await getAvailablePort()
     const server = createServer({
       publicDirectory: '/dev/null',
-      errorPage: 'error.js',
-      pageFilenameSuffix: '__page.js',
+      errorHandler: 'error.js',
+      handlerFilenameSuffix: '__page.js',
     })
     assert.deepEqual(await server.listen(availablePort), undefined)
     assert.deepEqual(await server.close(), undefined)
   })
 
   test('configuration defaults', async _ => {
+    const availablePort = await getAvailablePort()
     const server = createServer({
       publicDirectory: '/dev/null',
     })
@@ -54,32 +55,84 @@ suite('server', _ => {
     assert.deepEqual(await server.close(), undefined)
   })
 
-  test('request handling', async _ => {
+  test('request handling with pages', async _ => {
+    const availablePort = await getAvailablePort()
     const server = createServer({
       publicDirectory: `${
         import.meta.dirname
       }/../fixtures/public-directories/hello-world`,
-      errorPage: '{error}.ts',
-      pageFilenameSuffix: '{page}.ts',
+      errorHandler: '{error}.ts',
+      handlerFilenameSuffix: '{page}.ts',
     })
     await server.listen(availablePort)
 
     try {
-      const pageResponse = await fetch(`http://localhost:${availablePort}/`)
-      assert.deepEqual(pageResponse.status, 200)
+      const rootResponse = await fetch(`http://localhost:${availablePort}/`)
+      assert.deepEqual(rootResponse.status, 200)
       assert.deepEqual(
-        pageResponse.headers.get('content-type'),
+        rootResponse.headers.get('content-type'),
         'text/html; charset=utf-8',
       )
-      assert((await pageResponse.text()).startsWith('<!doctype html>'))
+      assert((await rootResponse.text()).startsWith('<!doctype html>'))
 
       const cssResponse = await fetch(
         `http://localhost:${availablePort}/style.css`,
       )
-      assert.deepEqual(cssResponse.headers.get('content-type'), 'text/css')
       assert.deepEqual(cssResponse.status, 200)
+      assert.deepEqual(cssResponse.headers.get('content-type'), 'text/css')
       assert(cssResponse.headers.get('cache-control')?.startsWith('max-age='))
       assert((await cssResponse.text()).startsWith('html {'))
+
+      const notFoundResponse = await fetch(
+        `http://localhost:${availablePort}/this/path/does/not/exist`,
+      )
+      assert.deepEqual(notFoundResponse.status, 404)
+      assert.deepEqual(
+        notFoundResponse.headers.get('content-type'),
+        'text/html; charset=utf-8',
+      )
+      assert((await notFoundResponse.text()).startsWith('<!doctype html>'))
+    } finally {
+      await server.close()
+    }
+  })
+
+  test('request handling with custom handlers', async _ => {
+    const availablePort = await getAvailablePort()
+
+    const server = createServer({
+      publicDirectory: `${
+        import.meta.dirname
+      }/../fixtures/public-directories/handlers`,
+      errorHandler: '{error}.ts',
+      handlerFilenameSuffix: '{page}.ts',
+    })
+    await server.listen(availablePort)
+
+    try {
+      const rootResponse = await fetch(`http://localhost:${availablePort}/`)
+      assert.deepEqual(rootResponse.status, 418)
+      assert.deepEqual(
+        rootResponse.headers.get('custom-header'),
+        'custom header value',
+      )
+      assert.deepEqual(
+        await rootResponse.text(),
+        'This text is from the handler',
+      )
+
+      const notFoundResponse = await fetch(
+        `http://localhost:${availablePort}/this/path/does/not/exist`,
+      )
+      assert.deepEqual(notFoundResponse.status, 410)
+      assert.deepEqual(
+        notFoundResponse.headers.get('custom-header'),
+        'custom header value',
+      )
+      assert.deepEqual(
+        await notFoundResponse.text(),
+        'This text is from the error handler',
+      )
     } finally {
       await server.close()
     }

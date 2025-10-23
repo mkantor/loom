@@ -1,33 +1,25 @@
-import type { ReadableHTMLTokenStream } from '@superhighway/silk'
-import type { ResponseStatus } from './server.js'
+import {
+  HTMLSerializingTransformStream,
+  type ReadableHTMLTokenStream,
+} from '@superhighway/silk'
+import { requestHandler, type RequestHandler } from './handler.js'
 
-export type Page = { readonly [isPage]: true } & PageFunction
-export const page = (handler: PageFunction): Page => {
-  if (isPage in handler && handler[isPage] !== true) {
-    // This ought to be impossible (`isPage` is not exported).
-    throw new Error(
-      'Page handler already has an `isPage` symbol property whose value is not `true`. This is a bug!',
-    )
-  }
-  const handlerAsPageLike: { [isPage]?: true } & PageFunction = handler
-  handlerAsPageLike[isPage] = true
-  return handlerAsPageLike as Page
-}
+export const page = (pageFunction: PageFunction): RequestHandler =>
+  requestHandler(
+    (request, responseDetails) =>
+      new Response(
+        pageFunction(request)
+          .pipeThrough(
+            new HTMLSerializingTransformStream({
+              includeDoctype: true,
+            }),
+          )
+          .pipeThrough(new TextEncoderStream()),
+        {
+          status: responseDetails.status,
+          headers: { 'content-type': 'text/html; charset=utf-8' },
+        },
+      ),
+  )
 
-export const isPageModule = (
-  module: unknown,
-): module is { readonly default: Page } =>
-  typeof module === 'object' &&
-  module !== null &&
-  'default' in module &&
-  typeof module.default === 'function' &&
-  isPage in module.default &&
-  module.default[isPage] === true
-
-const isPage = Symbol('isPage')
-
-type ResponseDetails = { readonly status: ResponseStatus }
-type PageFunction = (
-  request: Request,
-  responseDetails: ResponseDetails,
-) => ReadableHTMLTokenStream
+type PageFunction = (request: Request) => ReadableHTMLTokenStream
