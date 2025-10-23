@@ -59,6 +59,8 @@ suite('server', _ => {
       publicDirectory: `${
         import.meta.dirname
       }/../fixtures/public-directories/hello-world`,
+      errorPage: '{error}.ts',
+      pageFilenameSuffix: '{page}.ts',
     })
     await server.listen(availablePort)
 

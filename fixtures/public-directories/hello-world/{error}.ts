@@ -1,7 +1,7 @@
 import { createElement } from '@superhighway/silk'
 import { page } from '../../../dist-test/page.js'
 
-export default page((request, { status }) =>
+export default page(request =>
   createElement(
     'html',
     { lang: 'en' },
