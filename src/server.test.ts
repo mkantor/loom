@@ -110,15 +110,29 @@ suite('server', _ => {
     await server.listen(availablePort)
 
     try {
-      const rootResponse = await fetch(`http://localhost:${availablePort}/`)
-      assert.deepEqual(rootResponse.status, 418)
+      const rootGetResponse = await fetch(`http://localhost:${availablePort}/`)
+      assert.deepEqual(rootGetResponse.status, 418)
       assert.deepEqual(
-        rootResponse.headers.get('custom-header'),
+        rootGetResponse.headers.get('custom-header'),
         'custom header value',
       )
       assert.deepEqual(
-        await rootResponse.text(),
-        'This text is from the handler',
+        await rootGetResponse.text(),
+        'This text is from the GET handler',
+      )
+
+      const rootPostResponse = await fetch(
+        `http://localhost:${availablePort}/`,
+        { method: 'POST' },
+      )
+      assert.deepEqual(rootPostResponse.status, 418)
+      assert.deepEqual(
+        rootPostResponse.headers.get('custom-header'),
+        'custom header value',
+      )
+      assert.deepEqual(
+        await rootPostResponse.text(),
+        'This text is from the POST handler',
       )
 
       const notFoundResponse = await fetch(
@@ -133,6 +147,32 @@ suite('server', _ => {
         await notFoundResponse.text(),
         'This text is from the error handler',
       )
+    } finally {
+      await server.close()
+    }
+  })
+
+  test('unsupported methods', async _ => {
+    const availablePort = await getAvailablePort()
+    const server = createServer({
+      publicDirectory: `${
+        import.meta.dirname
+      }/../fixtures/public-directories/hello-world`,
+      errorHandler: '{error}.ts',
+      handlerFilenameSuffix: '{page}.ts',
+    })
+    await server.listen(availablePort)
+
+    try {
+      const rootResponse = await fetch(`http://localhost:${availablePort}/`, {
+        method: 'OPTIONS',
+      })
+      assert.deepEqual(rootResponse.status, 501)
+      assert.deepEqual(
+        rootResponse.headers.get('content-type'),
+        'text/html; charset=utf-8',
+      )
+      assert((await rootResponse.text()).startsWith('<!doctype html>'))
     } finally {
       await server.close()
     }

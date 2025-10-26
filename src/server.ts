@@ -85,15 +85,13 @@ export const createServer = (configuration: ServerConfiguration): Server => {
   }
 }
 
+const routableMethods = new Set(['delete', 'get', 'patch', 'post', 'put'])
+const methodIsRoutable = (method: string): boolean =>
+  routableMethods.has(method.toLowerCase())
+
 const createRequestHandler =
   (configuration: ServerConfiguration) =>
   async (request: Request): Promise<Response> => {
-    // Percent-decode and normalize to a relative path without a trailing `/`.
-    const requestPath = decodeURI(new URL(request.url).pathname).replace(
-      /^\/+|\/+$/g,
-      '',
-    )
-
     const { publicDirectory, handlerFilenameSuffix, errorHandler } = {
       ...serverConfigurationDefaults,
       ...configuration,
@@ -101,9 +99,15 @@ const createRequestHandler =
 
     const errorModulePath = `${publicDirectory}/${errorHandler}`
 
-    if (request.method !== 'GET') {
+    if (!methodIsRoutable(request.method)) {
       return handleError(errorModulePath, request, { status: 501 })
     }
+
+    // Percent-decode and normalize to a relative path without a trailing `/`.
+    const requestPath = decodeURI(new URL(request.url).pathname).replace(
+      /^\/+|\/+$/g,
+      '',
+    )
 
     // First try looking for a handler to serve the request.
     const handlerModulePath = `${publicDirectory}/${request.method.toLowerCase()}/${requestPath}${encodeURIComponent(
