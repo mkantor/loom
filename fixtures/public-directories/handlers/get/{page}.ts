@@ -1,4 +1,4 @@
-import { requestHandler } from '../../../dist-test/handler.js'
+import { requestHandler } from '../../../../dist-test/handler.js'
 
 export default requestHandler(
   request =>

@@ -106,7 +106,7 @@ const createRequestHandler =
     }
 
     // First try looking for a handler to serve the request.
-    const handlerModulePath = `${publicDirectory}/${requestPath}${encodeURIComponent(
+    const handlerModulePath = `${publicDirectory}/${request.method.toLowerCase()}/${requestPath}${encodeURIComponent(
       handlerFilenameSuffix,
     )}`
     return handleRequestDynamicallyOrReject(handlerModulePath, request, {
@@ -139,7 +139,7 @@ const createRequestHandler =
         return handleError(errorModulePath, request, { status: 404 })
       } else {
         // Try to serve as a static file.
-        let path = `${publicDirectory}/${requestPath}`
+        let path = `${publicDirectory}/${request.method.toLowerCase()}/${requestPath}`
         try {
           // Resolve symlinks. Mime types are based on the resolved path.
           path = await nodeFS.readlink(path)

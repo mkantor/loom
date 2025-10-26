@@ -1,5 +1,5 @@
 import { createElement } from '@superhighway/silk'
-import { page } from '../../../dist-test/page.js'
+import { page } from '../../../../dist-test/page.js'
 
 export default page(request =>
   createElement(
