@@ -14,7 +14,7 @@ export type ServerConfiguration = {
   readonly publicDirectory: string
 
   /**
-   * A path relative to `contentDirectory` where an error page may be found. If
+   * A path relative to `publicDirectory` where an error page may be found. If
    * a page is not found at this path, minimal `text/plain` responses will be
    * sent upon errors.
    *
