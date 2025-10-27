@@ -3,7 +3,7 @@ import nodeFS from 'node:fs/promises'
 import * as nodeHTTP from 'node:http'
 import nodePath from 'node:path'
 import { Readable, Writable } from 'node:stream'
-import { isRequestHandlerModule } from './handler.js'
+import { isRequestHandlerModule, type ResponseStatus } from './handler.js'
 
 export type ServerConfiguration = {
   /**
@@ -50,16 +50,6 @@ export type Server = {
    */
   readonly close: () => Promise<undefined>
 }
-
-// The server only ever responds with a subset of the possible status codes.
-export type ResponseStatus =
-  | 200 // OK
-  | 400 // Bad Request
-  | 404 // Not Found
-  | 405 // Method Not Allowed
-  | 406 // Not Acceptable
-  | 500 // Internal Server Error
-  | 501 // Not Implemented
 
 export const createServer = (configuration: ServerConfiguration): Server => {
   const handleRequest = createRequestHandler(configuration)

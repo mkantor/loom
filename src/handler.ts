@@ -1,5 +1,3 @@
-import type { ResponseStatus } from './server.js'
-
 export type RequestHandler = {
   readonly [isHandler]: true
 } & RequestHandlerFunction
@@ -27,6 +25,16 @@ export const isRequestHandlerModule = (
   typeof module.default === 'function' &&
   isHandler in module.default &&
   module.default[isHandler] === true
+
+// The server only ever responds with a subset of the possible status codes.
+export type ResponseStatus =
+  | 200 // OK
+  | 400 // Bad Request
+  | 404 // Not Found
+  | 405 // Method Not Allowed
+  | 406 // Not Acceptable
+  | 500 // Internal Server Error
+  | 501 // Not Implemented
 
 const isHandler = Symbol('isHandler')
 
