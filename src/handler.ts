@@ -27,19 +27,41 @@ export const isRequestHandlerModule = (
   module.default[isHandler] === true
 
 // The server only ever responds with a subset of the possible status codes.
-export type ResponseStatus =
-  | 200 // OK
-  | 400 // Bad Request
-  | 404 // Not Found
-  | 405 // Method Not Allowed
-  | 406 // Not Acceptable
-  | 500 // Internal Server Error
-  | 501 // Not Implemented
+export type SuggestedResponseDetails =
+  | {
+      readonly status: 200 // OK
+      readonly headers: {}
+    }
+  | {
+      readonly status: 400 // Bad Request
+      readonly headers: {}
+    }
+  | {
+      readonly status: 404 // Not Found
+      readonly headers: {}
+    }
+  | {
+      readonly status: 405 // Method Not Allowed
+      readonly headers: {}
+    }
+  | {
+      readonly status: 406 // Not Acceptable
+      readonly headers: {}
+    }
+  | {
+      readonly status: 500 // Internal Server Error
+      readonly headers: {}
+    }
+  | {
+      readonly status: 501 // Not Implemented
+      readonly headers: {}
+    }
+
+export type ResponseStatus = SuggestedResponseDetails['status']
 
 const isHandler = Symbol('isHandler')
 
-type ResponseDetails = { readonly status: ResponseStatus }
 type RequestHandlerFunction = (
   request: Request,
-  responseDetails: ResponseDetails,
+  responseDetails: SuggestedResponseDetails,
 ) => Response | Promise<Response>

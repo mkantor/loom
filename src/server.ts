@@ -3,7 +3,10 @@ import nodeFS from 'node:fs/promises'
 import * as nodeHTTP from 'node:http'
 import nodePath from 'node:path'
 import { Readable, Writable } from 'node:stream'
-import { isRequestHandlerModule, type ResponseStatus } from './handler.js'
+import {
+  isRequestHandlerModule,
+  type SuggestedResponseDetails,
+} from './handler.js'
 
 export type ServerConfiguration = {
   /**
@@ -90,7 +93,7 @@ const createRequestHandler =
     const errorModulePath = `${publicDirectory}/${errorHandler}`
 
     if (!methodIsRoutable(request.method)) {
-      return handleError(errorModulePath, request, { status: 501 })
+      return handleError(errorModulePath, request, { status: 501, headers: {} })
     }
 
     // Percent-decode and normalize to a relative path without a trailing `/`.
@@ -105,6 +108,7 @@ const createRequestHandler =
     )}`
     return handleRequestDynamicallyOrReject(handlerModulePath, request, {
       status: 200,
+      headers: {},
     }).catch(async (handlerError: unknown) => {
       // Fall back to looking for a static file.
 
@@ -127,10 +131,16 @@ const createRequestHandler =
         console.error(
           `Request path '/${requestPath}' ends in '${handlerFilenameSuffix}'`,
         )
-        return handleError(errorModulePath, request, { status: 404 })
+        return handleError(errorModulePath, request, {
+          status: 404,
+          headers: {},
+        })
       } else if (requestPath === errorHandler) {
         console.error(`Request path '/${requestPath}' was for error handler`)
-        return handleError(errorModulePath, request, { status: 404 })
+        return handleError(errorModulePath, request, {
+          status: 404,
+          headers: {},
+        })
       } else {
         // Try to serve as a static file.
         let path = `${publicDirectory}/${request.method.toLowerCase()}/${requestPath}`
@@ -169,7 +179,10 @@ const createRequestHandler =
           if (staticFile !== undefined) {
             staticFile.close()
           }
-          return handleError(errorModulePath, request, { status: 404 })
+          return handleError(errorModulePath, request, {
+            status: 404,
+            headers: {},
+          })
         }
       }
     })
@@ -178,7 +191,7 @@ const createRequestHandler =
 const handleRequestDynamicallyOrReject = (
   modulePath: string,
   request: Request,
-  responseDetails: { readonly status: ResponseStatus },
+  responseDetails: SuggestedResponseDetails,
 ) =>
   import(modulePath).then(async (module: unknown) => {
     if (!isRequestHandlerModule(module)) {
@@ -191,7 +204,7 @@ const handleRequestDynamicallyOrReject = (
 const handleError = (
   errorModulePath: string,
   originalRequest: Request,
-  responseDetails: { readonly status: Exclude<ResponseStatus, 200> },
+  responseDetails: Exclude<SuggestedResponseDetails, { readonly status: 200 }>,
 ) =>
   handleRequestDynamicallyOrReject(
     errorModulePath,
@@ -218,7 +231,7 @@ const handleError = (
     })()
     return new Response(errorMessage, {
       status: responseDetails.status,
-      headers: { 'content-type': 'text/plain' },
+      headers: { ...responseDetails.headers, 'content-type': 'text/plain' },
     })
   })
 

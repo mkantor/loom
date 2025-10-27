@@ -17,7 +17,10 @@ export const page = (pageFunction: PageFunction): RequestHandler =>
           .pipeThrough(new TextEncoderStream()),
         {
           status: responseDetails.status,
-          headers: { 'content-type': 'text/html; charset=utf-8' },
+          headers: {
+            ...responseDetails.headers,
+            'content-type': 'text/html; charset=utf-8',
+          },
         },
       ),
   )

@@ -10,6 +10,7 @@ suite('page', _ => {
   test('response', async _ => {
     const response = testPage(new Request(testURL), {
       status: 200,
+      headers: {},
     })
 
     const responseBody = await (await response).text()
