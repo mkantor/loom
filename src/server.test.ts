@@ -67,21 +67,45 @@ suite('server', _ => {
     await server.listen(availablePort)
 
     try {
-      const rootResponse = await fetch(`http://localhost:${availablePort}/`)
-      assert.deepEqual(rootResponse.status, 200)
+      const getRootResponse = await fetch(`http://localhost:${availablePort}/`)
+      assert.deepEqual(getRootResponse.status, 200)
       assert.deepEqual(
-        rootResponse.headers.get('content-type'),
+        getRootResponse.headers.get('content-type'),
         'text/html; charset=utf-8',
       )
-      assert((await rootResponse.text()).startsWith('<!doctype html>'))
+      assert((await getRootResponse.text()).startsWith('<!doctype html>'))
 
-      const cssResponse = await fetch(
+      const headRootResponse = await fetch(
+        `http://localhost:${availablePort}/`,
+        { method: 'HEAD' },
+      )
+      assert.deepEqual(headRootResponse.status, 200)
+      assert.deepEqual(
+        headRootResponse.headers.get('content-type'),
+        'text/html; charset=utf-8',
+      )
+      assert.deepEqual(headRootResponse.body, null)
+
+      const getCSSResponse = await fetch(
         `http://localhost:${availablePort}/style.css`,
       )
-      assert.deepEqual(cssResponse.status, 200)
-      assert.deepEqual(cssResponse.headers.get('content-type'), 'text/css')
-      assert(cssResponse.headers.get('cache-control')?.startsWith('max-age='))
-      assert((await cssResponse.text()).startsWith('html {'))
+      assert.deepEqual(getCSSResponse.status, 200)
+      assert.deepEqual(getCSSResponse.headers.get('content-type'), 'text/css')
+      assert(
+        getCSSResponse.headers.get('cache-control')?.startsWith('max-age='),
+      )
+      assert((await getCSSResponse.text()).startsWith('html {'))
+
+      const headCSSResponse = await fetch(
+        `http://localhost:${availablePort}/style.css`,
+        { method: 'HEAD' },
+      )
+      assert.deepEqual(headCSSResponse.status, 200)
+      assert.deepEqual(headCSSResponse.headers.get('content-type'), 'text/css')
+      assert(
+        headCSSResponse.headers.get('cache-control')?.startsWith('max-age='),
+      )
+      assert.deepEqual(headCSSResponse.body, null)
 
       const notFoundResponse = await fetch(
         `http://localhost:${availablePort}/this/path/does/not/exist`,
@@ -188,7 +212,11 @@ suite('server', _ => {
         rootDeleteResponse.headers.get('content-type'),
         'text/html; charset=utf-8',
       )
-      assert.deepEqual(rootDeleteResponse.headers.get('allow'), 'GET')
+      const allowedMethods = rootDeleteResponse.headers
+        .get('allow')
+        ?.split(', ')
+      assert(allowedMethods?.includes('GET'))
+      assert(allowedMethods?.includes('HEAD'))
       assert((await rootDeleteResponse.text()).startsWith('<!doctype html>'))
     } finally {
       await server.close()

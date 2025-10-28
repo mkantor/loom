@@ -168,7 +168,9 @@ const createRequestHandler =
           })
           const oneYearInSeconds = '31536000'
           return new Response(
-            staticFile.readableWebStream({ autoClose: true }),
+            request.method === 'HEAD'
+              ? undefined
+              : staticFile.readableWebStream({ autoClose: true }),
             {
               status: 200,
               headers: {
@@ -338,10 +340,15 @@ const getHandlerModulePath = (
     readonly method: string
     readonly path: string
   },
-) =>
-  `${configuration.publicDirectory}/${requestDetails.method.toLowerCase()}/${
+) => {
+  const lowercaseMethod = requestDetails.method.toLowerCase()
+  const methodAsPathComponent =
+    lowercaseMethod === 'head' ? 'get' : lowercaseMethod
+
+  return `${configuration.publicDirectory}/${methodAsPathComponent}/${
     requestDetails.path
   }${encodeURIComponent(configuration.handlerFilenameSuffix)}`
+}
 
 const getStaticFilePath = (
   configuration: Required<ServerConfiguration>,
@@ -349,10 +356,13 @@ const getStaticFilePath = (
     readonly method: string
     readonly path: string
   },
-) =>
-  `${configuration.publicDirectory}/${requestDetails.method.toLowerCase()}/${
-    requestDetails.path
-  }`
+) => {
+  const lowercaseMethod = requestDetails.method.toLowerCase()
+  const methodAsPathComponent =
+    lowercaseMethod === 'head' ? 'get' : lowercaseMethod
+
+  return `${configuration.publicDirectory}/${methodAsPathComponent}/${requestDetails.path}`
+}
 
 const getErrorModulePath = (configuration: Required<ServerConfiguration>) =>
   `${configuration.publicDirectory}/${configuration.errorHandler}`
@@ -363,6 +373,7 @@ const lowercasedRoutableMethods = new Set([
   'patch',
   'post',
   'put',
+  'head',
 ])
 
 const methodIsRoutable = (method: string): boolean =>

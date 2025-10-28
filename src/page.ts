@@ -8,13 +8,15 @@ export const page = (pageFunction: PageFunction): RequestHandler =>
   requestHandler(
     (request, responseDetails) =>
       new Response(
-        pageFunction(request)
-          .pipeThrough(
-            new HTMLSerializingTransformStream({
-              includeDoctype: true,
-            }),
-          )
-          .pipeThrough(new TextEncoderStream()),
+        request.method === 'HEAD'
+          ? undefined
+          : pageFunction(request)
+              .pipeThrough(
+                new HTMLSerializingTransformStream({
+                  includeDoctype: true,
+                }),
+              )
+              .pipeThrough(new TextEncoderStream()),
         {
           status: responseDetails.status,
           headers: {
