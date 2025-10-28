@@ -2,11 +2,14 @@ import mime from 'mime/lite'
 import nodeFS from 'node:fs/promises'
 import * as nodeHTTP from 'node:http'
 import nodePath from 'node:path'
-import { Readable, Writable } from 'node:stream'
 import {
   isRequestHandlerModule,
   type SuggestedResponseDetails,
 } from './handler.js'
+import {
+  incomingMessageToWebRequest,
+  writeWebResponseToServerResponse,
+} from './nodeHTTPAdapters.js'
 
 export type ServerConfiguration = {
   /**
@@ -86,10 +89,12 @@ const createRequestHandler =
       ...configuration,
     }
 
-    const errorModulePath = getErrorModulePath(configurationWithDefaults)
-
     if (!methodIsRoutable(request.method)) {
-      return handleError(errorModulePath, request, { status: 501, headers: {} })
+      return handleError(
+        request,
+        { status: 501, headers: {} },
+        configurationWithDefaults,
+      )
     }
 
     // Percent-decode and normalize to a relative path without a trailing `/`.
@@ -98,20 +103,16 @@ const createRequestHandler =
       '',
     )
 
-    const { publicDirectory, handlerFilenameSuffix, errorHandler } =
-      configurationWithDefaults
-
     // First try looking for a handler to serve the request.
-    const handlerModulePath = getHandlerModulePath(configurationWithDefaults, {
-      method: request.method,
-      path: requestPath,
-    })
-    return handleRequestDynamicallyOrReject(handlerModulePath, request, {
-      status: 200,
-      headers: {},
-    }).catch(async (handlerError: unknown) => {
-      // Fall back to looking for a static file.
-
+    return handleRequestDynamicallyOrReject(
+      requestPath,
+      request,
+      {
+        status: 200,
+        headers: {},
+      },
+      configurationWithDefaults,
+    ).catch(async (handlerError: unknown) => {
       if (
         // Don't log `ERR_MODULE_NOT_FOUND` errors (they're expected if the
         // request is for a static file rather than a dynamic handler).
@@ -124,221 +125,191 @@ const createRequestHandler =
         console.warn('Falling back to a static file (if one exists)')
       }
 
-      // Make it impossible to get the source of a handler this way (something
-      // else would have had to already gone wrong to make it here; this is
-      // defense in depth).
-      if (requestPath.endsWith(handlerFilenameSuffix)) {
-        console.error(
-          `Request path '/${requestPath}' ends in '${handlerFilenameSuffix}'`,
-        )
-        return handleError(errorModulePath, request, {
-          status: 404,
-          headers: {},
-        })
-      } else if (requestPath === errorHandler) {
-        console.error(`Request path '/${requestPath}' was for error handler`)
-        return handleError(errorModulePath, request, {
-          status: 404,
-          headers: {},
-        })
-      } else {
-        // Try to serve as a static file.
-        let path = getStaticFilePath(configurationWithDefaults, {
-          method: request.method,
-          path: requestPath,
-        })
-        try {
-          // Resolve symlinks. Mime types are based on the resolved path.
-          path = await nodeFS.readlink(path)
-          if (!nodePath.isAbsolute(path)) {
-            path = `${publicDirectory}/${path}`
-          }
-        } catch {
-          // Errors here indicate the file was not a symlink, which is fine.
-        }
-        const mimeType = mime.getType(path)
-
-        let staticFile
-        try {
-          staticFile = await nodeFS.open(path)
-          await staticFile.stat().then(stats => {
-            if (stats.isFile() === false) {
-              throw new Error(`'${path}' is not a file`)
-            }
-          })
-          const oneYearInSeconds = '31536000'
-          return new Response(
-            request.method === 'HEAD'
-              ? undefined
-              : staticFile.readableWebStream({ autoClose: true }),
-            {
-              status: 200,
-              headers: {
-                'cache-control': `max-age=${oneYearInSeconds}`,
-                ...(mimeType ? { 'content-type': mimeType } : {}),
-              },
-            },
-          )
-        } catch (error) {
-          console.error(error)
-          if (staticFile !== undefined) {
-            staticFile.close()
-          }
-
-          // These will be lowercase.
-          const allowedMethods: readonly string[] = (
-            await Promise.all(
-              Array.from(lowercasedRoutableMethods).map(method =>
-                // Check if there is a handler or static file for this method at
-                // the requested path.
-                nodeFS
-                  .stat(
-                    getHandlerModulePath(configurationWithDefaults, {
-                      method,
-                      path: requestPath,
-                    }),
-                  )
-                  .then(_ => method)
-                  .catch(_ =>
-                    nodeFS
-                      .stat(
-                        getStaticFilePath(configurationWithDefaults, {
-                          method,
-                          path: requestPath,
-                        }),
-                      )
-                      .then(_ => method)
-                      .catch(_ => undefined),
-                  ),
-              ),
-            )
-          ).filter(method => method !== undefined)
-
-          if (allowedMethods.length > 0) {
-            return handleError(errorModulePath, request, {
-              status: 405,
-              headers: {
-                allow: allowedMethods
-                  .map(method => method.toUpperCase())
-                  .join(', '),
-              },
-            })
-          } else {
-            return handleError(errorModulePath, request, {
-              status: 404,
-              headers: {},
-            })
-          }
-        }
-      }
+      return handleRequestForStaticFile(
+        requestPath,
+        request,
+        configurationWithDefaults,
+      )
     })
   }
 
 const handleRequestDynamicallyOrReject = (
-  modulePath: string,
+  requestPath: string,
   request: Request,
   responseDetails: SuggestedResponseDetails,
-) =>
-  import(modulePath).then(async (module: unknown) => {
+  configuration: Required<ServerConfiguration>,
+) => {
+  const handlerModulePath = getHandlerModulePath(configuration, {
+    method: request.method,
+    requestPath,
+  })
+  return import(handlerModulePath).then(async (module: unknown) => {
     if (!isRequestHandlerModule(module)) {
-      throw new Error(`'${modulePath}' is not a valid request handler module`)
+      throw new Error(
+        `'${handlerModulePath}' is not a valid request handler module`,
+      )
     } else {
       return module.default(request, responseDetails)
     }
   })
+}
 
-const handleError = (
-  errorModulePath: string,
-  originalRequest: Request,
-  responseDetails: Exclude<SuggestedResponseDetails, { readonly status: 200 }>,
-) =>
-  handleRequestDynamicallyOrReject(
-    errorModulePath,
-    originalRequest,
-    responseDetails,
-  ).catch(_error => {
-    // Fall back to a `text/plain` error if the error handler itself failed
-    // (or does not exist).
-    const errorMessage = ((): string => {
-      switch (responseDetails.status) {
-        case 400:
-          return 'Bad Request'
-        case 404:
-          return 'Not Found'
-        case 405:
-          return 'Method Not Allowed'
-        case 406:
-          return 'Not Acceptable'
-        case 500:
-          return 'Internal Server Error'
-        case 501:
-          return 'Not Implemented'
-      }
-    })()
-    return new Response(errorMessage, {
-      status: responseDetails.status,
-      headers: { ...responseDetails.headers, 'content-type': 'text/plain' },
+const handleRequestForStaticFile = async (
+  requestPath: string,
+  request: Request,
+  configuration: Required<ServerConfiguration>,
+) => {
+  // Make it impossible to get the source of a handler this way (something
+  // else would have had to already gone wrong to make it here; this is
+  // defense in depth).
+  if (requestPath.endsWith(configuration.handlerFilenameSuffix)) {
+    console.error(
+      `Request path '/${requestPath}' ends in '${configuration.handlerFilenameSuffix}'`,
+    )
+    return handleError(request, { status: 404, headers: {} }, configuration)
+  } else if (requestPath === configuration.errorHandler) {
+    console.error(`Request path '/${requestPath}' was for error handler`)
+    return handleError(request, { status: 404, headers: {} }, configuration)
+  } else {
+    // Try to serve as a static file.
+    let staticFilePath = getStaticFilePath(configuration, {
+      method: request.method,
+      requestPath,
     })
-  })
+    try {
+      // Resolve symlinks. Mime types are based on the resolved path.
+      staticFilePath = await nodeFS.readlink(staticFilePath)
+      if (!nodePath.isAbsolute(staticFilePath)) {
+        staticFilePath = `${configuration.publicDirectory}/${staticFilePath}`
+      }
+    } catch {
+      // Errors here indicate the file was not a symlink, which is fine.
+    }
+    const mimeType = mime.getType(staticFilePath)
 
-/**
- * Expects an `incomingMessage` obtained from a `Server` (it must have its
- * `.url` set).
- */
-const incomingMessageToWebRequest = (
-  incomingMessage: nodeHTTP.IncomingMessage,
-  baseUrl: string,
-): Request => {
-  const url = new URL(incomingMessage.url ?? '/', baseUrl)
+    let staticFile
+    try {
+      staticFile = await nodeFS.open(staticFilePath)
+      await staticFile.stat().then(stats => {
+        if (stats.isFile() === false) {
+          throw new Error(`'${staticFilePath}' is not a file`)
+        }
+      })
+      const oneYearInSeconds = '31536000'
+      return new Response(
+        request.method === 'HEAD'
+          ? undefined
+          : staticFile.readableWebStream({ autoClose: true }),
+        {
+          status: 200,
+          headers: {
+            'cache-control': `max-age=${oneYearInSeconds}`,
+            ...(mimeType ? { 'content-type': mimeType } : {}),
+          },
+        },
+      )
+    } catch (error) {
+      console.error(error)
+      if (staticFile !== undefined) {
+        staticFile.close()
+      }
 
-  const headers = new Headers()
-  for (const key in incomingMessage.headers) {
-    const value = incomingMessage.headers[key]
-    if (value !== undefined) {
-      if (Array.isArray(value)) {
-        value.forEach(element => headers.append(key, element))
+      // These will be lowercase.
+      const allowedMethods: readonly string[] = (
+        await Promise.all(
+          Array.from(lowercasedRoutableMethods).map(method =>
+            // Check if there is a handler or static file for this method at
+            // the requested path.
+            nodeFS
+              .stat(
+                getHandlerModulePath(configuration, {
+                  method,
+                  requestPath,
+                }),
+              )
+              .then(_ => method)
+              .catch(_ =>
+                nodeFS
+                  .stat(
+                    getStaticFilePath(configuration, {
+                      method,
+                      requestPath,
+                    }),
+                  )
+                  .then(_ => method)
+                  .catch(_ => undefined),
+              ),
+          ),
+        )
+      ).filter(method => method !== undefined)
+
+      if (allowedMethods.length > 0) {
+        return handleError(
+          request,
+          {
+            status: 405,
+            headers: {
+              allow: allowedMethods
+                .map(method => method.toUpperCase())
+                .join(', '),
+            },
+          },
+          configuration,
+        )
       } else {
-        headers.append(key, value)
+        return handleError(request, { status: 404, headers: {} }, configuration)
       }
     }
   }
-
-  const body =
-    incomingMessage.method !== 'GET' && incomingMessage.method !== 'HEAD'
-      ? Readable.toWeb(incomingMessage)
-      : null
-
-  const request = new Request(url.toString(), {
-    method: incomingMessage.method ?? '', // This fallback is expected to fail.
-    headers,
-    body,
-    duplex: 'half',
-  })
-
-  return request
 }
 
-const writeWebResponseToServerResponse = async (
-  webResponse: Response,
-  serverResponse: nodeHTTP.ServerResponse,
-): Promise<undefined> => {
-  serverResponse.statusCode = webResponse.status
-  serverResponse.statusMessage = webResponse.statusText
-  serverResponse.setHeaders(webResponse.headers)
-  try {
-    await webResponse.body
-      ?.pipeTo(Writable.toWeb(serverResponse))
-      .catch(console.error)
-  } finally {
-    await new Promise(resolve => serverResponse.end(resolve))
-  }
+const handleError = (
+  originalRequest: Request,
+  responseDetails: Exclude<SuggestedResponseDetails, { readonly status: 200 }>,
+  configuration: Required<ServerConfiguration>,
+) => {
+  const errorModulePath = getErrorModulePath(configuration)
+  return import(errorModulePath)
+    .then(async (module: unknown) => {
+      if (!isRequestHandlerModule(module)) {
+        throw new Error(
+          `'${errorModulePath}' is not a valid request handler module`,
+        )
+      } else {
+        return module.default(originalRequest, responseDetails)
+      }
+    })
+    .catch(_error => {
+      // Fall back to a `text/plain` error if the error handler itself failed
+      // (or does not exist).
+      const errorMessage = ((): string => {
+        switch (responseDetails.status) {
+          case 400:
+            return 'Bad Request'
+          case 404:
+            return 'Not Found'
+          case 405:
+            return 'Method Not Allowed'
+          case 406:
+            return 'Not Acceptable'
+          case 500:
+            return 'Internal Server Error'
+          case 501:
+            return 'Not Implemented'
+        }
+      })()
+      return new Response(errorMessage, {
+        status: responseDetails.status,
+        headers: { ...responseDetails.headers, 'content-type': 'text/plain' },
+      })
+    })
 }
 
 const getHandlerModulePath = (
   configuration: Required<ServerConfiguration>,
   requestDetails: {
     readonly method: string
-    readonly path: string
+    readonly requestPath: string
   },
 ) => {
   const lowercaseMethod = requestDetails.method.toLowerCase()
@@ -346,7 +317,7 @@ const getHandlerModulePath = (
     lowercaseMethod === 'head' ? 'get' : lowercaseMethod
 
   return `${configuration.publicDirectory}/${methodAsPathComponent}/${
-    requestDetails.path
+    requestDetails.requestPath
   }${encodeURIComponent(configuration.handlerFilenameSuffix)}`
 }
 
@@ -354,14 +325,14 @@ const getStaticFilePath = (
   configuration: Required<ServerConfiguration>,
   requestDetails: {
     readonly method: string
-    readonly path: string
+    readonly requestPath: string
   },
 ) => {
   const lowercaseMethod = requestDetails.method.toLowerCase()
   const methodAsPathComponent =
     lowercaseMethod === 'head' ? 'get' : lowercaseMethod
 
-  return `${configuration.publicDirectory}/${methodAsPathComponent}/${requestDetails.path}`
+  return `${configuration.publicDirectory}/${methodAsPathComponent}/${requestDetails.requestPath}`
 }
 
 const getErrorModulePath = (configuration: Required<ServerConfiguration>) =>
