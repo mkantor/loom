@@ -78,19 +78,15 @@ export const createServer = (configuration: ServerConfiguration): Server => {
   }
 }
 
-const routableMethods = new Set(['delete', 'get', 'patch', 'post', 'put'])
-const methodIsRoutable = (method: string): boolean =>
-  routableMethods.has(method.toLowerCase())
-
 const createRequestHandler =
   (configuration: ServerConfiguration) =>
   async (request: Request): Promise<Response> => {
-    const { publicDirectory, handlerFilenameSuffix, errorHandler } = {
+    const configurationWithDefaults = {
       ...serverConfigurationDefaults,
       ...configuration,
     }
 
-    const errorModulePath = `${publicDirectory}/${errorHandler}`
+    const errorModulePath = getErrorModulePath(configurationWithDefaults)
 
     if (!methodIsRoutable(request.method)) {
       return handleError(errorModulePath, request, { status: 501, headers: {} })
@@ -102,10 +98,14 @@ const createRequestHandler =
       '',
     )
 
+    const { publicDirectory, handlerFilenameSuffix, errorHandler } =
+      configurationWithDefaults
+
     // First try looking for a handler to serve the request.
-    const handlerModulePath = `${publicDirectory}/${request.method.toLowerCase()}/${requestPath}${encodeURIComponent(
-      handlerFilenameSuffix,
-    )}`
+    const handlerModulePath = getHandlerModulePath(configurationWithDefaults, {
+      method: request.method,
+      path: requestPath,
+    })
     return handleRequestDynamicallyOrReject(handlerModulePath, request, {
       status: 200,
       headers: {},
@@ -143,7 +143,10 @@ const createRequestHandler =
         })
       } else {
         // Try to serve as a static file.
-        let path = `${publicDirectory}/${request.method.toLowerCase()}/${requestPath}`
+        let path = getStaticFilePath(configurationWithDefaults, {
+          method: request.method,
+          path: requestPath,
+        })
         try {
           // Resolve symlinks. Mime types are based on the resolved path.
           path = await nodeFS.readlink(path)
@@ -287,3 +290,39 @@ const writeWebResponseToServerResponse = async (
     await new Promise(resolve => serverResponse.end(resolve))
   }
 }
+
+const getHandlerModulePath = (
+  configuration: Required<ServerConfiguration>,
+  requestDetails: {
+    readonly method: string
+    readonly path: string
+  },
+) =>
+  `${configuration.publicDirectory}/${requestDetails.method.toLowerCase()}/${
+    requestDetails.path
+  }${encodeURIComponent(configuration.handlerFilenameSuffix)}`
+
+const getStaticFilePath = (
+  configuration: Required<ServerConfiguration>,
+  requestDetails: {
+    readonly method: string
+    readonly path: string
+  },
+) =>
+  `${configuration.publicDirectory}/${requestDetails.method.toLowerCase()}/${
+    requestDetails.path
+  }`
+
+const getErrorModulePath = (configuration: Required<ServerConfiguration>) =>
+  `${configuration.publicDirectory}/${configuration.errorHandler}`
+
+const lowercasedRoutableMethods = new Set([
+  'delete',
+  'get',
+  'patch',
+  'post',
+  'put',
+])
+
+const methodIsRoutable = (method: string): boolean =>
+  lowercasedRoutableMethods.has(method.toLowerCase())
