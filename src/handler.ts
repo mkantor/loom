@@ -42,7 +42,9 @@ export type SuggestedResponseDetails =
     }
   | {
       readonly status: 405 // Method Not Allowed
-      readonly headers: {}
+      readonly headers: {
+        readonly allow: string
+      }
     }
   | {
       readonly status: 406 // Not Acceptable

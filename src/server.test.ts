@@ -164,15 +164,32 @@ suite('server', _ => {
     await server.listen(availablePort)
 
     try {
-      const rootResponse = await fetch(`http://localhost:${availablePort}/`, {
-        method: 'OPTIONS',
-      })
-      assert.deepEqual(rootResponse.status, 501)
+      const rootOptionsResponse = await fetch(
+        `http://localhost:${availablePort}/`,
+        {
+          method: 'OPTIONS',
+        },
+      )
+      assert.deepEqual(rootOptionsResponse.status, 501)
       assert.deepEqual(
-        rootResponse.headers.get('content-type'),
+        rootOptionsResponse.headers.get('content-type'),
         'text/html; charset=utf-8',
       )
-      assert((await rootResponse.text()).startsWith('<!doctype html>'))
+      assert((await rootOptionsResponse.text()).startsWith('<!doctype html>'))
+
+      const rootDeleteResponse = await fetch(
+        `http://localhost:${availablePort}/`,
+        {
+          method: 'DELETE',
+        },
+      )
+      assert.deepEqual(rootDeleteResponse.status, 405)
+      assert.deepEqual(
+        rootDeleteResponse.headers.get('content-type'),
+        'text/html; charset=utf-8',
+      )
+      assert.deepEqual(rootDeleteResponse.headers.get('allow'), 'GET')
+      assert((await rootDeleteResponse.text()).startsWith('<!doctype html>'))
     } finally {
       await server.close()
     }

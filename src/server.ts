@@ -182,10 +182,51 @@ const createRequestHandler =
           if (staticFile !== undefined) {
             staticFile.close()
           }
-          return handleError(errorModulePath, request, {
-            status: 404,
-            headers: {},
-          })
+
+          // These will be lowercase.
+          const allowedMethods: readonly string[] = (
+            await Promise.all(
+              Array.from(lowercasedRoutableMethods).map(method =>
+                // Check if there is a handler or static file for this method at
+                // the requested path.
+                nodeFS
+                  .stat(
+                    getHandlerModulePath(configurationWithDefaults, {
+                      method,
+                      path: requestPath,
+                    }),
+                  )
+                  .then(_ => method)
+                  .catch(_ =>
+                    nodeFS
+                      .stat(
+                        getStaticFilePath(configurationWithDefaults, {
+                          method,
+                          path: requestPath,
+                        }),
+                      )
+                      .then(_ => method)
+                      .catch(_ => undefined),
+                  ),
+              ),
+            )
+          ).filter(method => method !== undefined)
+
+          if (allowedMethods.length > 0) {
+            return handleError(errorModulePath, request, {
+              status: 405,
+              headers: {
+                allow: allowedMethods
+                  .map(method => method.toUpperCase())
+                  .join(', '),
+              },
+            })
+          } else {
+            return handleError(errorModulePath, request, {
+              status: 404,
+              headers: {},
+            })
+          }
         }
       }
     })
