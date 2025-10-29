@@ -53,4 +53,35 @@ suite('server', _ => {
     assert.deepEqual(await server.listen(availablePort), undefined)
     assert.deepEqual(await server.close(), undefined)
   })
+
+  test('request handling', async _ => {
+    const server = createServer({
+      publicDirectory: `${
+        import.meta.dirname
+      }/../fixtures/public-directories/hello-world`,
+      errorPage: '{error}.ts',
+      pageFilenameSuffix: '{page}.ts',
+    })
+    await server.listen(availablePort)
+
+    try {
+      const pageResponse = await fetch(`http://localhost:${availablePort}/`)
+      assert.deepEqual(pageResponse.status, 200)
+      assert.deepEqual(
+        pageResponse.headers.get('content-type'),
+        'text/html; charset=utf-8',
+      )
+      assert((await pageResponse.text()).startsWith('<!doctype html>'))
+
+      const cssResponse = await fetch(
+        `http://localhost:${availablePort}/style.css`,
+      )
+      assert.deepEqual(cssResponse.headers.get('content-type'), 'text/css')
+      assert.deepEqual(cssResponse.status, 200)
+      assert(cssResponse.headers.get('cache-control')?.startsWith('max-age='))
+      assert((await cssResponse.text()).startsWith('html {'))
+    } finally {
+      await server.close()
+    }
+  })
 })

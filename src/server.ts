@@ -14,7 +14,7 @@ export type ServerConfiguration = {
   readonly publicDirectory: string
 
   /**
-   * A path relative to `contentDirectory` where an error page may be found. If
+   * A path relative to `publicDirectory` where an error page may be found. If
    * a page is not found at this path, minimal `text/plain` responses will be
    * sent upon errors.
    *
@@ -53,7 +53,14 @@ export type Server = {
 }
 
 // The server only ever responds with a subset of the possible status codes.
-export type ResponseStatus = 200 | 404 | 500
+export type ResponseStatus =
+  | 200 // OK
+  | 400 // Bad Request
+  | 404 // Not Found
+  | 405 // Method Not Allowed
+  | 406 // Not Acceptable
+  | 500 // Internal Server Error
+  | 501 // Not Implemented
 
 export const createServer = (configuration: ServerConfiguration): Server => {
   const handleRequest = createRequestHandler(configuration)
@@ -94,6 +101,10 @@ const createRequestHandler =
     }
 
     const errorPageModulePath = `${publicDirectory}/${errorPage}`
+
+    if (request.method !== 'GET') {
+      return handleError(errorPageModulePath, request, { status: 501 })
+    }
 
     // First try looking for a page to serve the request.
     const pageModulePath = `${publicDirectory}/${requestPath}${pageFilenameSuffix}`
@@ -209,10 +220,18 @@ const handleError = (
     // (or does not exist).
     const errorMessage = ((): string => {
       switch (responseDetails.status) {
+        case 400:
+          return 'Bad Request'
         case 404:
           return 'Not Found'
+        case 405:
+          return 'Method Not Allowed'
+        case 406:
+          return 'Not Acceptable'
         case 500:
           return 'Internal Server Error'
+        case 501:
+          return 'Not Implemented'
       }
     })()
     return new Response(errorMessage, {
