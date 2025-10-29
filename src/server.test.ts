@@ -61,8 +61,8 @@ suite('server', _ => {
       publicDirectory: `${
         import.meta.dirname
       }/../fixtures/public-directories/hello-world`,
-      errorHandler: '{error}.ts',
-      handlerFilenameSuffix: '{page}.ts',
+      errorHandler: '#error.ts',
+      handlerFilenameSuffix: '#handler.ts',
     })
     await server.listen(availablePort)
 
@@ -128,8 +128,8 @@ suite('server', _ => {
       publicDirectory: `${
         import.meta.dirname
       }/../fixtures/public-directories/handlers`,
-      errorHandler: '{error}.ts',
-      handlerFilenameSuffix: '{page}.ts',
+      errorHandler: '#error.ts',
+      handlerFilenameSuffix: '#handler.ts',
     })
     await server.listen(availablePort)
 
@@ -182,8 +182,8 @@ suite('server', _ => {
       publicDirectory: `${
         import.meta.dirname
       }/../fixtures/public-directories/hello-world`,
-      errorHandler: '{error}.ts',
-      handlerFilenameSuffix: '{page}.ts',
+      errorHandler: '#error.ts',
+      handlerFilenameSuffix: '#handler.ts',
     })
     await server.listen(availablePort)
 

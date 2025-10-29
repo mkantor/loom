@@ -13,8 +13,8 @@ import {
 
 export type ServerConfiguration = {
   /**
-   * The path where your pages and other content live. The root of this
-   * directory corresponds to the routing root.
+   * The path where your request handlers and static content lives. The root of
+   * this directory corresponds to the routing root.
    */
   readonly publicDirectory: string
 
@@ -23,18 +23,19 @@ export type ServerConfiguration = {
    * If a request handler module is not found at this path, minimal `text/plain`
    * responses will be sent upon errors.
    *
-   * Defaults to `'{error}.js'`.
+   * Defaults to `'#error.js'`.
    */
   readonly errorHandler?: string
 
   /**
-   * Defaults to `'{page}.js'`.
+   * Defaults to `'#handler.js'`.
    */
   readonly handlerFilenameSuffix?: string
 }
+
 const serverConfigurationDefaults = {
-  errorHandler: '{error}.js',
-  handlerFilenameSuffix: '{page}.js',
+  handlerFilenameSuffix: '#handler.js',
+  errorHandler: '#error.js',
 } satisfies Partial<ServerConfiguration>
 
 export type Server = {
