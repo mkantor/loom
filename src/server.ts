@@ -336,7 +336,9 @@ const getStaticFilePath = (
 }
 
 const getErrorModulePath = (configuration: Required<ServerConfiguration>) =>
-  `${configuration.publicDirectory}/${configuration.errorHandler}`
+  `${configuration.publicDirectory}/${encodeURIComponent(
+    configuration.errorHandler,
+  )}`
 
 const lowercasedRoutableMethods = new Set([
   'delete',
