@@ -4,8 +4,8 @@ Loom is a simple web server for Node.js. Web pages in Loom use [Silk][silk] for
 server-side rendering.
 
 Loom has filesystem-based routing: when you start the server you provide a
-directory containing dynamic pages and static files which are used to serve
-incoming HTTP requests.
+directory containing static files and dynamic request handlers which are used to
+serve incoming HTTP requests.
 
 The server avoids buffering response data as much as possible, instead streaming
 it to the client as soon as it becomes available.
