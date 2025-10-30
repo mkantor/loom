@@ -69,7 +69,9 @@ export const createServer = (configuration: ServerConfiguration): Server => {
       console.info(
         `Responding with HTTP ${response.status} to \`${request.method} ${request.url}\``,
       )
-      return writeWebResponseToServerResponse(response, serverResponse)
+      if (!serverResponse.closed) {
+        return writeWebResponseToServerResponse(response, serverResponse)
+      }
     })
   })
 
