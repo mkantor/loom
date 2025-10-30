@@ -188,7 +188,7 @@ const handleRequestForStaticFile = async (
     }
     const mimeType = mime.getType(staticFilePath)
 
-    let staticFile
+    let staticFile: nodeFS.FileHandle | undefined
     try {
       staticFile = await nodeFS.open(staticFilePath)
       await staticFile.stat().then(stats => {
@@ -197,23 +197,61 @@ const handleRequestForStaticFile = async (
         }
       })
       const oneYearInSeconds = '31536000'
-      return new Response(
-        request.method === 'HEAD'
-          ? undefined
-          : staticFile.readableWebStream({ autoClose: true }),
-        {
+
+      if (request.method === 'HEAD') {
+        await staticFile.close()
+        return new Response(undefined, {
           status: 200,
           headers: {
             'cache-control': `max-age=${oneYearInSeconds}`,
             ...(mimeType ? { 'content-type': mimeType } : {}),
           },
+        })
+      }
+
+      // When the `ReadableStream` methods below capture `staticFile`, it's
+      // typed as `nodeFS.FileHandle | undefined` even though it is definitely
+      // defined. This narrowly-typed alias avoids the need to handle an
+      // impossible `undefined` case.
+      const definedStaticFile: nodeFS.FileHandle = staticFile
+
+      const fileStream = staticFile.readableWebStream()
+
+      // Close `staticFile` after the response stream finishes or is canceled.
+      const fileHandleClosingStream = new ReadableStream({
+        start: async controller => {
+          const reader = fileStream.getReader()
+          try {
+            while (true) {
+              const { done, value } = await reader.read()
+              if (done) {
+                controller.close()
+                break
+              }
+              controller.enqueue(value)
+            }
+          } catch (error) {
+            controller.error(error)
+          } finally {
+            await definedStaticFile.close()
+          }
         },
-      )
+        cancel: async reason => {
+          await fileStream.cancel(reason)
+          await definedStaticFile.close()
+        },
+      })
+
+      return new Response(fileHandleClosingStream, {
+        status: 200,
+        headers: {
+          'cache-control': `max-age=${oneYearInSeconds}`,
+          ...(mimeType ? { 'content-type': mimeType } : {}),
+        },
+      })
     } catch (error) {
       console.error(error)
-      if (staticFile !== undefined) {
-        staticFile.close()
-      }
+      await staticFile?.close()
 
       // These will be lowercase.
       const allowedMethods: readonly string[] = (
