@@ -1,36 +1,42 @@
-import { HTMLSerializingTransformStream } from '@superhighway/silk'
 import mime from 'mime/lite'
 import nodeFS from 'node:fs/promises'
 import * as nodeHTTP from 'node:http'
 import nodePath from 'node:path'
-import { Readable, Writable } from 'node:stream'
-import { isPageModule } from './page.js'
+import {
+  isRequestHandlerModule,
+  type SuggestedResponseDetails,
+} from './handler.js'
+import {
+  incomingMessageToWebRequest,
+  writeWebResponseToServerResponse,
+} from './nodeHTTPAdapters.js'
 
 export type ServerConfiguration = {
   /**
-   * The path where your pages and other content live. The root of this
-   * directory corresponds to the routing root.
+   * The path where your request handlers and static content lives. The root of
+   * this directory corresponds to the routing root.
    */
   readonly publicDirectory: string
 
   /**
-   * A path relative to `publicDirectory` where an error page may be found. If
-   * a page is not found at this path, minimal `text/plain` responses will be
-   * sent upon errors.
+   * A path relative to `publicDirectory` where an error handler may be found.
+   * If a request handler module is not found at this path, minimal `text/plain`
+   * responses will be sent upon errors.
    *
-   * Defaults to `'{error}.js'`.
+   * Defaults to `'#error.js'`.
    */
-  readonly errorPage?: string
+  readonly errorHandler?: string
 
   /**
-   * Defaults to `'{page}.js'`.
+   * Defaults to `'#handler.js'`.
    */
-  readonly pageFilenameSuffix?: string
+  readonly handlerFilenameSuffix?: string
 }
+
 const serverConfigurationDefaults = {
-  pageFilenameSuffix: '{page}.js',
-  errorPage: '{error}.js',
-}
+  handlerFilenameSuffix: '#handler.js',
+  errorHandler: '#error.js',
+} satisfies Partial<ServerConfiguration>
 
 export type Server = {
   /**
@@ -51,16 +57,6 @@ export type Server = {
    */
   readonly close: () => Promise<undefined>
 }
-
-// The server only ever responds with a subset of the possible status codes.
-export type ResponseStatus =
-  | 200 // OK
-  | 400 // Bad Request
-  | 404 // Not Found
-  | 405 // Method Not Allowed
-  | 406 // Not Acceptable
-  | 500 // Internal Server Error
-  | 501 // Not Implemented
 
 export const createServer = (configuration: ServerConfiguration): Server => {
   const handleRequest = createRequestHandler(configuration)
@@ -89,206 +85,270 @@ export const createServer = (configuration: ServerConfiguration): Server => {
 const createRequestHandler =
   (configuration: ServerConfiguration) =>
   async (request: Request): Promise<Response> => {
+    const configurationWithDefaults = {
+      ...serverConfigurationDefaults,
+      ...configuration,
+    }
+
+    if (!methodIsRoutable(request.method)) {
+      return handleError(
+        request,
+        { status: 501, headers: {} },
+        configurationWithDefaults,
+      )
+    }
+
     // Percent-decode and normalize to a relative path without a trailing `/`.
     const requestPath = decodeURI(new URL(request.url).pathname).replace(
       /^\/+|\/+$/g,
       '',
     )
 
-    const { publicDirectory, pageFilenameSuffix, errorPage } = {
-      ...serverConfigurationDefaults,
-      ...configuration,
-    }
-
-    const errorPageModulePath = `${publicDirectory}/${errorPage}`
-
-    if (request.method !== 'GET') {
-      return handleError(errorPageModulePath, request, { status: 501 })
-    }
-
-    // First try looking for a page to serve the request.
-    const pageModulePath = `${publicDirectory}/${requestPath}${pageFilenameSuffix}`
-    return handlePageRequestOrReject(pageModulePath, request, {
-      status: 200,
-    }).catch(async (pageError: unknown) => {
-      // Fall back to looking for a static file.
-
+    // First try looking for a handler to serve the request.
+    return handleRequestDynamicallyOrReject(
+      requestPath,
+      request,
+      {
+        status: 200,
+        headers: {},
+      },
+      configurationWithDefaults,
+    ).catch(async (handlerError: unknown) => {
       if (
         // Don't log `ERR_MODULE_NOT_FOUND` errors (they're expected if the
-        // request is for a static file rather than a page).
-        typeof pageError !== 'object' ||
-        pageError === null ||
-        !('code' in pageError) ||
-        pageError.code !== 'ERR_MODULE_NOT_FOUND'
+        // request is for a static file rather than a dynamic handler).
+        typeof handlerError !== 'object' ||
+        handlerError === null ||
+        !('code' in handlerError) ||
+        handlerError.code !== 'ERR_MODULE_NOT_FOUND'
       ) {
-        console.error(pageError)
+        console.error(handlerError)
         console.warn('Falling back to a static file (if one exists)')
       }
 
-      // Make it impossible to get the source of a page this way (something else
-      // would have had to already gone wrong to make it here; this is defense
-      // in depth).
-      if (requestPath.endsWith(pageFilenameSuffix)) {
-        console.error(
-          `Request path '/${requestPath}' ends in '${pageFilenameSuffix}'`,
-        )
-        return handleError(errorPageModulePath, request, { status: 404 })
-      } else if (requestPath === errorPage) {
-        console.error(`Request path '/${requestPath}' was for error page`)
-        return handleError(errorPageModulePath, request, { status: 404 })
-      } else {
-        // Try to serve as a static file.
-        let path = `${publicDirectory}/${requestPath}`
-        try {
-          // Resolve symlinks. Mime types are based on the resolved path.
-          path = await nodeFS.readlink(path)
-          if (!nodePath.isAbsolute(path)) {
-            path = `${publicDirectory}/${path}`
-          }
-        } catch {
-          // Errors here indicate the file was not a symlink, which is fine.
-        }
-        const mimeType = mime.getType(path)
-
-        let staticFile
-        try {
-          staticFile = await nodeFS.open(path)
-          await staticFile.stat().then(stats => {
-            if (stats.isFile() === false) {
-              throw new Error(`'${path}' is not a file`)
-            }
-          })
-          const oneYearInSeconds = '31536000'
-          return new Response(
-            staticFile.readableWebStream({ autoClose: true }),
-            {
-              status: 200,
-              headers: {
-                'cache-control': `max-age=${oneYearInSeconds}`,
-                ...(mimeType ? { 'content-type': mimeType } : {}),
-              },
-            },
-          )
-        } catch (error) {
-          console.error(error)
-          if (staticFile !== undefined) {
-            staticFile.close()
-          }
-          return handleError(errorPageModulePath, request, { status: 404 })
-        }
-      }
+      return handleRequestForStaticFile(
+        requestPath,
+        request,
+        configurationWithDefaults,
+      )
     })
   }
 
-const handlePageRequestOrReject = (
-  pageModulePath: string,
+const handleRequestDynamicallyOrReject = (
+  requestPath: string,
   request: Request,
-  responseDetails: { readonly status: ResponseStatus },
-) =>
-  import(pageModulePath).then((module: unknown) => {
-    if (!isPageModule(module)) {
-      throw new Error(`'${pageModulePath}' is not a valid page module`)
+  responseDetails: SuggestedResponseDetails,
+  configuration: Required<ServerConfiguration>,
+) => {
+  const handlerModulePath = getHandlerModulePath(configuration, {
+    method: request.method,
+    requestPath,
+  })
+  return import(handlerModulePath).then(async (module: unknown) => {
+    if (!isRequestHandlerModule(module)) {
+      throw new Error(
+        `'${handlerModulePath}' is not a valid request handler module`,
+      )
     } else {
-      const page = module.default(request, responseDetails)
+      return module.default(request, responseDetails)
+    }
+  })
+}
+
+const handleRequestForStaticFile = async (
+  requestPath: string,
+  request: Request,
+  configuration: Required<ServerConfiguration>,
+) => {
+  // Make it impossible to get the source of a handler this way (something
+  // else would have had to already gone wrong to make it here; this is
+  // defense in depth).
+  if (requestPath.endsWith(configuration.handlerFilenameSuffix)) {
+    console.error(
+      `Request path '/${requestPath}' ends in '${configuration.handlerFilenameSuffix}'`,
+    )
+    return handleError(request, { status: 404, headers: {} }, configuration)
+  } else if (requestPath === configuration.errorHandler) {
+    console.error(`Request path '/${requestPath}' was for error handler`)
+    return handleError(request, { status: 404, headers: {} }, configuration)
+  } else {
+    // Try to serve as a static file.
+    let staticFilePath = getStaticFilePath(configuration, {
+      method: request.method,
+      requestPath,
+    })
+    try {
+      // Resolve symlinks. Mime types are based on the resolved path.
+      staticFilePath = await nodeFS.readlink(staticFilePath)
+      if (!nodePath.isAbsolute(staticFilePath)) {
+        staticFilePath = `${configuration.publicDirectory}/${staticFilePath}`
+      }
+    } catch {
+      // Errors here indicate the file was not a symlink, which is fine.
+    }
+    const mimeType = mime.getType(staticFilePath)
+
+    let staticFile
+    try {
+      staticFile = await nodeFS.open(staticFilePath)
+      await staticFile.stat().then(stats => {
+        if (stats.isFile() === false) {
+          throw new Error(`'${staticFilePath}' is not a file`)
+        }
+      })
+      const oneYearInSeconds = '31536000'
       return new Response(
-        page
-          .pipeThrough(
-            new HTMLSerializingTransformStream({
-              includeDoctype: true,
-            }),
-          )
-          .pipeThrough(new TextEncoderStream()),
+        request.method === 'HEAD'
+          ? undefined
+          : staticFile.readableWebStream({ autoClose: true }),
         {
-          status: responseDetails.status,
-          headers: { 'content-type': 'text/html; charset=utf-8' },
+          status: 200,
+          headers: {
+            'cache-control': `max-age=${oneYearInSeconds}`,
+            ...(mimeType ? { 'content-type': mimeType } : {}),
+          },
         },
       )
+    } catch (error) {
+      console.error(error)
+      if (staticFile !== undefined) {
+        staticFile.close()
+      }
+
+      // These will be lowercase.
+      const allowedMethods: readonly string[] = (
+        await Promise.all(
+          Array.from(lowercasedRoutableMethods).map(method =>
+            // Check if there is a handler or static file for this method at
+            // the requested path.
+            nodeFS
+              .stat(
+                getHandlerModulePath(configuration, {
+                  method,
+                  requestPath,
+                }),
+              )
+              .then(_ => method)
+              .catch(_ =>
+                nodeFS
+                  .stat(
+                    getStaticFilePath(configuration, {
+                      method,
+                      requestPath,
+                    }),
+                  )
+                  .then(_ => method)
+                  .catch(_ => undefined),
+              ),
+          ),
+        )
+      ).filter(method => method !== undefined)
+
+      if (allowedMethods.length > 0) {
+        return handleError(
+          request,
+          {
+            status: 405,
+            headers: {
+              allow: allowedMethods
+                .map(method => method.toUpperCase())
+                .join(', '),
+            },
+          },
+          configuration,
+        )
+      } else {
+        return handleError(request, { status: 404, headers: {} }, configuration)
+      }
     }
-  })
+  }
+}
 
 const handleError = (
-  errorPageModulePath: string,
   originalRequest: Request,
-  responseDetails: { readonly status: Exclude<ResponseStatus, 200> },
-) =>
-  handlePageRequestOrReject(
-    errorPageModulePath,
-    originalRequest,
-    responseDetails,
-  ).catch(_error => {
-    // Fall back to a `text/plain` error if the error handler itself failed
-    // (or does not exist).
-    const errorMessage = ((): string => {
-      switch (responseDetails.status) {
-        case 400:
-          return 'Bad Request'
-        case 404:
-          return 'Not Found'
-        case 405:
-          return 'Method Not Allowed'
-        case 406:
-          return 'Not Acceptable'
-        case 500:
-          return 'Internal Server Error'
-        case 501:
-          return 'Not Implemented'
-      }
-    })()
-    return new Response(errorMessage, {
-      status: responseDetails.status,
-      headers: { 'content-type': 'text/plain' },
-    })
-  })
-
-/**
- * Expects an `incomingMessage` obtained from a `Server` (it must have its
- * `.url` set).
- */
-const incomingMessageToWebRequest = (
-  incomingMessage: nodeHTTP.IncomingMessage,
-  baseUrl: string,
-): Request => {
-  const url = new URL(incomingMessage.url ?? '/', baseUrl)
-
-  const headers = new Headers()
-  for (const key in incomingMessage.headers) {
-    const value = incomingMessage.headers[key]
-    if (value !== undefined) {
-      if (Array.isArray(value)) {
-        value.forEach(element => headers.append(key, element))
+  responseDetails: Exclude<SuggestedResponseDetails, { readonly status: 200 }>,
+  configuration: Required<ServerConfiguration>,
+) => {
+  const errorModulePath = getErrorModulePath(configuration)
+  return import(errorModulePath)
+    .then(async (module: unknown) => {
+      if (!isRequestHandlerModule(module)) {
+        throw new Error(
+          `'${errorModulePath}' is not a valid request handler module`,
+        )
       } else {
-        headers.append(key, value)
+        return module.default(originalRequest, responseDetails)
       }
-    }
-  }
-
-  const body =
-    incomingMessage.method !== 'GET' && incomingMessage.method !== 'HEAD'
-      ? Readable.toWeb(incomingMessage)
-      : null
-
-  const request = new Request(url.toString(), {
-    method: incomingMessage.method ?? '', // This fallback is expected to fail.
-    headers,
-    body,
-    duplex: 'half',
-  })
-
-  return request
+    })
+    .catch(_error => {
+      // Fall back to a `text/plain` error if the error handler itself failed
+      // (or does not exist).
+      const errorMessage = ((): string => {
+        switch (responseDetails.status) {
+          case 400:
+            return 'Bad Request'
+          case 404:
+            return 'Not Found'
+          case 405:
+            return 'Method Not Allowed'
+          case 406:
+            return 'Not Acceptable'
+          case 500:
+            return 'Internal Server Error'
+          case 501:
+            return 'Not Implemented'
+        }
+      })()
+      return new Response(errorMessage, {
+        status: responseDetails.status,
+        headers: { ...responseDetails.headers, 'content-type': 'text/plain' },
+      })
+    })
 }
 
-const writeWebResponseToServerResponse = async (
-  webResponse: Response,
-  serverResponse: nodeHTTP.ServerResponse,
-): Promise<undefined> => {
-  serverResponse.statusCode = webResponse.status
-  serverResponse.statusMessage = webResponse.statusText
-  serverResponse.setHeaders(webResponse.headers)
-  try {
-    await webResponse.body
-      ?.pipeTo(Writable.toWeb(serverResponse))
-      .catch(console.error)
-  } finally {
-    await new Promise(resolve => serverResponse.end(resolve))
-  }
+const getHandlerModulePath = (
+  configuration: Required<ServerConfiguration>,
+  requestDetails: {
+    readonly method: string
+    readonly requestPath: string
+  },
+) => {
+  const lowercaseMethod = requestDetails.method.toLowerCase()
+  const methodAsPathComponent =
+    lowercaseMethod === 'head' ? 'get' : lowercaseMethod
+
+  return `${configuration.publicDirectory}/${methodAsPathComponent}/${
+    requestDetails.requestPath
+  }${encodeURIComponent(configuration.handlerFilenameSuffix)}`
 }
+
+const getStaticFilePath = (
+  configuration: Required<ServerConfiguration>,
+  requestDetails: {
+    readonly method: string
+    readonly requestPath: string
+  },
+) => {
+  const lowercaseMethod = requestDetails.method.toLowerCase()
+  const methodAsPathComponent =
+    lowercaseMethod === 'head' ? 'get' : lowercaseMethod
+
+  return `${configuration.publicDirectory}/${methodAsPathComponent}/${requestDetails.requestPath}`
+}
+
+const getErrorModulePath = (configuration: Required<ServerConfiguration>) =>
+  `${configuration.publicDirectory}/${encodeURIComponent(
+    configuration.errorHandler,
+  )}`
+
+const lowercasedRoutableMethods = new Set([
+  'delete',
+  'get',
+  'patch',
+  'post',
+  'put',
+  'head',
+])
+
+const methodIsRoutable = (method: string): boolean =>
+  lowercasedRoutableMethods.has(method.toLowerCase())

@@ -1,7 +1,7 @@
-import { createElement, type HTMLToken } from '@superhighway/silk'
+import { createElement } from '@superhighway/silk'
 import assert from 'node:assert'
 import test, { suite } from 'node:test'
-import { isPageModule, page } from './page.js'
+import { page } from './page.js'
 
 const testURL = 'https://example.com/'
 const testPage = page(request => createElement('div', {}, request.url))
@@ -10,35 +10,10 @@ suite('page', _ => {
   test('response', async _ => {
     const response = testPage(new Request(testURL), {
       status: 200,
+      headers: {},
     })
 
-    const tokens: HTMLToken[] = []
-    for await (const token of response) {
-      tokens.push(token)
-    }
-
-    assert.deepEqual(tokens, [
-      {
-        kind: 'startOfOpeningTag',
-        tagName: 'div',
-      },
-      {
-        kind: 'endOfOpeningTag',
-      },
-      {
-        kind: 'text',
-        text: testURL,
-      },
-      {
-        kind: 'closingTag',
-      },
-    ])
-  })
-
-  test('isPage', async _ => {
-    assert(isPageModule({ default: testPage }))
-    assert(!isPageModule({}))
-    assert(!isPageModule({ default: 'not a page' }))
-    assert(!isPageModule({ default: () => {} }))
+    const responseBody = await (await response).text()
+    assert.deepEqual(responseBody, `<!doctype html><div>${testURL}</div>`)
   })
 })
