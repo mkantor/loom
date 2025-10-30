@@ -1,6 +1,6 @@
 import {
   HTMLSerializingTransformStream,
-  type ReadableHTMLTokenStream,
+  type ReadableHTMLStream,
 } from '@superhighway/silk'
 import { requestHandler, type RequestHandler } from './handler.js'
 
@@ -27,4 +27,4 @@ export const page = (pageFunction: PageFunction): RequestHandler =>
       ),
   )
 
-type PageFunction = (request: Request) => ReadableHTMLTokenStream
+type PageFunction = (request: Request) => ReadableHTMLStream
