@@ -122,7 +122,10 @@ const createRequestHandler =
         !('code' in handlerError) ||
         handlerError.code !== 'ERR_MODULE_NOT_FOUND'
       ) {
-        console.error(handlerError)
+        console.error(
+          `Could not handle \`${request.method} ${request.url}\` dynamically:`,
+          handlerError,
+        )
         console.warn('Falling back to a static file (if one exists)')
       }
 
@@ -250,7 +253,10 @@ const handleRequestForStaticFile = async (
         },
       })
     } catch (error) {
-      console.error(error)
+      console.error(
+        `Could not handle \`${request.method} ${request.url}\` as a static file:`,
+        error,
+      )
       await staticFile?.close()
 
       // These will be lowercase.
