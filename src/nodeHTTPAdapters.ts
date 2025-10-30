@@ -48,7 +48,18 @@ export const writeWebResponseToServerResponse = async (
   try {
     await webResponse.body
       ?.pipeTo(Writable.toWeb(serverResponse))
-      .catch(console.error)
+      .catch(error => {
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.warn(
+            'Response body streaming was aborted, probably because the client closed the connection',
+          )
+        } else {
+          console.error(
+            'Failed to pipe `Response` body writes to `ServerResponse`:',
+            error,
+          )
+        }
+      })
   } finally {
     await new Promise(resolve => serverResponse.end(resolve))
   }

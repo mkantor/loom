@@ -65,9 +65,12 @@ export const createServer = (configuration: ServerConfiguration): Server => {
       incomingMessage,
       `http://${process.env['HOST'] ?? 'localhost'}`,
     )
-    handleRequest(request).then(response =>
-      writeWebResponseToServerResponse(response, serverResponse),
-    )
+    handleRequest(request).then(response => {
+      console.info(
+        `Responding with HTTP ${response.status} to \`${request.method} ${request.url}\``,
+      )
+      return writeWebResponseToServerResponse(response, serverResponse)
+    })
   })
 
   return {
@@ -116,7 +119,7 @@ const createRequestHandler =
     ).catch(async (handlerError: unknown) => {
       console.error(
         `Could not handle \`${request.method} ${request.url}\` dynamically:`,
-        handlerError,
+        handlerError instanceof Error ? handlerError.toString() : handlerError,
       )
       console.warn('Falling back to a static file (if one exists)')
       return handleRequestForStaticFile(
@@ -245,7 +248,7 @@ const handleRequestForStaticFile = async (
     } catch (error) {
       console.error(
         `Could not handle \`${request.method} ${request.url}\` as a static file:`,
-        error,
+        error instanceof Error ? error.toString() : error,
       )
       await staticFile?.close()
 
