@@ -65,9 +65,14 @@ export const createServer = (configuration: ServerConfiguration): Server => {
       incomingMessage,
       `http://${process.env['HOST'] ?? 'localhost'}`,
     )
-    handleRequest(request).then(response =>
-      writeWebResponseToServerResponse(response, serverResponse),
-    )
+    handleRequest(request).then(response => {
+      console.info(
+        `Responding with HTTP ${response.status} to \`${request.method} ${request.url}\``,
+      )
+      if (!serverResponse.closed) {
+        return writeWebResponseToServerResponse(response, serverResponse)
+      }
+    })
   })
 
   return {
@@ -114,18 +119,11 @@ const createRequestHandler =
       },
       configurationWithDefaults,
     ).catch(async (handlerError: unknown) => {
-      if (
-        // Don't log `ERR_MODULE_NOT_FOUND` errors (they're expected if the
-        // request is for a static file rather than a dynamic handler).
-        typeof handlerError !== 'object' ||
-        handlerError === null ||
-        !('code' in handlerError) ||
-        handlerError.code !== 'ERR_MODULE_NOT_FOUND'
-      ) {
-        console.error(handlerError)
-        console.warn('Falling back to a static file (if one exists)')
-      }
-
+      console.error(
+        `Could not handle \`${request.method} ${request.url}\` dynamically:`,
+        handlerError instanceof Error ? handlerError.toString() : handlerError,
+      )
+      console.warn('Falling back to a static file (if one exists)')
       return handleRequestForStaticFile(
         requestPath,
         request,
@@ -250,7 +248,10 @@ const handleRequestForStaticFile = async (
         },
       })
     } catch (error) {
-      console.error(error)
+      console.error(
+        `Could not handle \`${request.method} ${request.url}\` as a static file:`,
+        error instanceof Error ? error.toString() : error,
+      )
       await staticFile?.close()
 
       // These will be lowercase.
