@@ -15,10 +15,10 @@ Example websites powered by Loom & Silk are available in this repository:
 
 ## Quick Start
 
-This creates a simple "hello world" website:
+This creates a basic "hello world" website:
 
 ```sh
-npm create loom $path
+npm create loom@latest $path
 cd $path
 PORT=9999 npm run start
 ```
