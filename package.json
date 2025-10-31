@@ -2,7 +2,7 @@
   "name": "@superhighway/loom",
   "version": "0.0.4",
   "dependencies": {
-    "@superhighway/silk": "^0.2.0",
+    "@superhighway/silk": "^0.2.1",
     "mime": "^4.1.0"
   },
   "devDependencies": {
