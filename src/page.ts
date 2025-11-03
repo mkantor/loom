@@ -2,7 +2,11 @@ import {
   HTMLSerializingTransformStream,
   type ReadableHTMLStream,
 } from '@superhighway/silk'
-import { requestHandler, type RequestHandler } from './handler.js'
+import {
+  requestHandler,
+  type RequestHandler,
+  type SuggestedResponseDetails,
+} from './handler.js'
 
 export const page = (pageFunction: PageFunction): RequestHandler =>
   requestHandler(
@@ -10,7 +14,7 @@ export const page = (pageFunction: PageFunction): RequestHandler =>
       new Response(
         request.method === 'HEAD'
           ? undefined
-          : pageFunction(request)
+          : pageFunction(request, responseDetails)
               .pipeThrough(
                 new HTMLSerializingTransformStream({
                   includeDoctype: true,
@@ -27,4 +31,7 @@ export const page = (pageFunction: PageFunction): RequestHandler =>
       ),
   )
 
-type PageFunction = (request: Request) => ReadableHTMLStream
+type PageFunction = (
+  request: Request,
+  responseDetails: SuggestedResponseDetails,
+) => ReadableHTMLStream
