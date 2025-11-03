@@ -115,7 +115,9 @@ suite('server', _ => {
         notFoundResponse.headers.get('content-type'),
         'text/html; charset=utf-8',
       )
-      assert((await notFoundResponse.text()).startsWith('<!doctype html>'))
+      const responseBody = await notFoundResponse.text()
+      assert(responseBody.startsWith('<!doctype html>'))
+      assert(responseBody.includes('404'))
     } finally {
       await server.close()
     }
@@ -217,7 +219,9 @@ suite('server', _ => {
         ?.split(', ')
       assert(allowedMethods?.includes('GET'))
       assert(allowedMethods?.includes('HEAD'))
-      assert((await rootDeleteResponse.text()).startsWith('<!doctype html>'))
+      const responseBody = await rootDeleteResponse.text()
+      assert(responseBody.startsWith('<!doctype html>'))
+      assert(responseBody.includes('405'))
     } finally {
       await server.close()
     }
