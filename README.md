@@ -1,6 +1,6 @@
 # loom
 
-Loom is a simple web server for Node.js. Web pages in Loom use [Silk][silk] for
+Loom is a web server for Node.js. Web pages in Loom use [Silk][silk] for
 server-side rendering.
 
 Loom has filesystem-based routing: when you start the server you provide a
