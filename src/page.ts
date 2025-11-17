@@ -1,7 +1,4 @@
-import {
-  HTMLSerializingTransformStream,
-  type ReadableHTMLStream,
-} from '@superhighway/silk'
+import type { ReadableHTMLStream } from '@superhighway/silk'
 import {
   requestHandler,
   type RequestHandler,
@@ -14,13 +11,9 @@ export const page = (pageFunction: PageFunction): RequestHandler =>
       new Response(
         request.method === 'HEAD'
           ? undefined
-          : pageFunction(request, responseDetails)
-              .pipeThrough(
-                new HTMLSerializingTransformStream({
-                  includeDoctype: true,
-                }),
-              )
-              .pipeThrough(new TextEncoderStream()),
+          : pageFunction(request, responseDetails).asBytes({
+              includeDoctype: true,
+            }),
         {
           status: responseDetails.status,
           headers: {
