@@ -7,14 +7,17 @@
   },
   "devDependencies": {
     "@types/node": "^24.6.2",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.2"
   },
   "files": [
     "dist/*"
   ],
   "license": "MIT",
   "main": "dist/index.js",
-  "repository": "github:mkantor/loom",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mkantor/loom.git"
+  },
   "scripts": {
     "build": "tsc --build tsconfig.main.json",
     "build:tests": "tsc --project tsconfig.main.json --outDir dist-test --declarationDir dist && tsc --build tsconfig.test.json",
